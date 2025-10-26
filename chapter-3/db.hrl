@@ -1,0 +1,1 @@
+-record(db_state, {name, entries = []}).

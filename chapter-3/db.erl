@@ -1,10 +1,8 @@
 -module(db).
 
--include_lib("eunit/include/eunit.hrl").
-
 -export([new/1, destroy/2, write/3, read/2, match/2]).
 
--record(db_state, {name, entries = []}).
+-include("db.hrl").
 
 new(Name) ->
     #db_state{name = Name, entries = []}.
