@@ -1,7 +1,7 @@
 -module(cqueue).
 
 -export([handle_call/3, handle_cast/2, init/1, start_link/1, publish/1, acknowledge/1,
-         consumer_loop/0, start_consumer/0, get/0]).
+         handle_info/2, consumer_loop/0, start_consumer/0, get/0]).
 
 -behavior(gen_server).
 
@@ -63,6 +63,7 @@ handle_cast({get, ConsumerRef},
                 ConsumerRef ! Msg1,
                 State#queue_state{in_flight = [Msg1 | InFlight]};
             '$end_of_table' ->
+                erlang:monitor(process, ConsumerRef),
                 State#queue_state{idle_consumers = [ConsumerRef | IdleConsumers]}
         end,
     {noreply, NewState};
@@ -72,10 +73,27 @@ handle_cast({acknowledge, {Ts, _}}, State = #queue_state{in_flight = InFlight}) 
          || {InflightMTs, InflightContent} <- InFlight, InflightMTs =/= Ts],
     {noreply, State#queue_state{in_flight = NewInFlight}}.
 
+handle_info({'DOWN', _, process, _Pid, _Reason},
+            State = #queue_state{idle_consumers = []}) ->
+    {noreply, State};
+handle_info({'DOWN', _, process, Pid, Reason},
+            State =
+                #queue_state{idle_consumers = IdleConsumers,
+                             in_flight =
+                                 _InFlight}) -> %% ideally cleanse the messages in_flight for that consumer
+    io:format("Queue server (~p) has terminated with reason ~p~n", [Pid, Reason]),
+    % Perform cleanup or restart logic here.
+    NewIdleConsumers = [CPid || CPid <- IdleConsumers, CPid =/= Pid],
+    {noreply, State#queue_state{idle_consumers = NewIdleConsumers}}.
+
 %% Client API
 get() ->
-    %% handle case wehere Module is not started
-    gen_server:cast(?MODULE, {get, self()}).
+    case whereis(?MODULE) of
+        undefined ->
+            {error, not_initialized};
+        _Pid ->
+            gen_server:cast(?MODULE, {get, self()})
+    end.
 
 acknowledge({Ts, _Content}) ->
     gen_server:cast(?MODULE, {acknowledge, {Ts, _Content}}).
@@ -91,8 +109,17 @@ start_consumer() ->
     {ok, Pid}.
 
 consumer_loop() ->
-    io:format("[CONSUMER] Waiting for new messages...\n"),
-    cqueue:get(),
+    Response = cqueue:get(),
+    case Response of
+        ok ->
+            io:format("[CONSUMER] Waiting for new messages...\n"),
+            consumer_loop0();
+        Failed ->
+            io:format("[CONSUMER] Failing process ~p\n", [Failed]),
+            exit(Failed)
+    end.
+
+consumer_loop0() ->
     receive
         Message ->
             io:format("[CONSUMER] Recived ~p\ Sending ACK\n", [Message]),
