@@ -5,7 +5,7 @@
 
 -behavior(gen_server).
 
--record(queue_state, {name, ets_table, in_flight = [], idle_consumers = []}).
+-record(queue_state, {name, db}).
 
 -define(QUEUE_ETS_STORE_NAME, queue_store).
 
@@ -14,28 +14,13 @@ start_link(Name) ->
 
 %% how to handle name
 init(Name) ->
-    Table = create_table_if_not_exists(),
-    {ok,
-     #queue_state{name = Name,
-                  ets_table = Table,
-                  in_flight = []}}.
-
-create_table_if_not_exists() ->
-    case lists:member(?QUEUE_ETS_STORE_NAME, ets:all()) of
-        true ->
-            ?QUEUE_ETS_STORE_NAME;
-        false ->
-            ets:new(?QUEUE_ETS_STORE_NAME, [ordered_set, named_table])
-    end.
+    {ok, DBPid} = dqueue_db:start_database(Name),
+    {ok, #queue_state{name = Name, db = DBPid}}.
 
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
-handle_cast({publish, {_H, Message}},
-            State =
-                #queue_state{name = Name,
-                             ets_table = EtsTable,
-                             idle_consumers = []}) ->
+handle_cast({publish, {_H, Message}}, State = #queue_state{name = Name}) ->
     case ets:insert_new(EtsTable, {{Name, erlang:system_time()}, {_H, Message}}) of
         true ->
             {noreply, State};
