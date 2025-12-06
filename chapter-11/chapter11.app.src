@@ -1,0 +1,10 @@
+{application, chapter11,
+ [{description, "Chapter 11 - Distributed Queue with Message Persistence"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib, mnesia]},
+  {env, []},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, []}
+ ]}.
